@@ -12,20 +12,26 @@ import (
 	"github.com/sp4rd4/go-numbers-task/numbers"
 )
 
-func numbersHandler(merger *numbers.NumbersMerger, respTimeout int, logger *log.Logger) func(w http.ResponseWriter, req *http.Request) {
+// numbersHandler creates handler that processes incoming requests to get URLs with numbers endpoints
+// numbersHandler launch numbers.Merger.Merge with obtained URLS
+func numbersHandler(merg *numbers.Merger, respTime int, lg *log.Logger) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
-		timeout := time.After(time.Millisecond * time.Duration(respTimeout))
+		// set timeout
+		timeout := time.After(time.Millisecond * time.Duration(respTime))
+		// check if we got GET request
 		if req.Method != "GET" {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		// log and respond with merged numbers
 		w.Header().Set("Content-Type", "application/json")
-		logger.Println("Obtained list of next urls:", req.URL.Query()["u"])
-		merger.Merge(req.URL.Query()["u"], w, timeout)
+		lg.Println("Obtained list of next urls:", req.URL.Query()["u"])
+		merg.Merge(req.URL.Query()["u"], w, timeout)
 	}
 }
 
 func main() {
+	// cli flags parsing, following values define config for service
 	port := flag.Int("port", 8000, "`port` for service to accept requests")
 	workerCount := flag.Int("workers", 32, "`number` of workers to precess numbers, should be more than 0")
 	respTimeout := flag.Int("resp-timeout", 500, "max amount of `time in milliseconds` for service to provide answer, should be 50 or more")
@@ -33,11 +39,13 @@ func main() {
 	logFile := flag.String("log", "", "`filename` of log file")
 	flag.Parse()
 
+	// check cli flags for valid values
 	if *respTimeout < 50 || *reqTimeout < 10 || *workerCount < 1 || *port < 1 || *port > 65535 {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
 
+	// initialize logger
 	var logWriter io.Writer
 	if *logFile != "" {
 		f, err := os.OpenFile(*logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
@@ -51,11 +59,14 @@ func main() {
 	if logWriter == nil {
 		logWriter = os.Stdout
 	}
-
 	logger := log.New(logWriter, "", log.LstdFlags)
 
 	mux := http.NewServeMux()
-	merger := numbers.StartNewNumbersMerger(*workerCount, *reqTimeout, logger)
+	// create merger and start workers
+	merger := numbers.NewMerger(*workerCount, *reqTimeout, logger)
+	defer merger.Close()
+
+	// launch service
 	mux.Handle("/numbers", http.HandlerFunc(numbersHandler(merger, *respTimeout, logger)))
 	logger.Fatal(http.ListenAndServe(":"+strconv.Itoa(*port), mux))
 }
