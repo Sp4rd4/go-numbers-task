@@ -13,8 +13,8 @@ import (
 )
 
 // numbersHandler creates handler that processes incoming requests to get URLs with numbers endpoints
-// numbersHandler launch numbers.Merger.Merge with obtained URLS
-func numbersHandler(merg *numbers.Merger, respTime int, lg *log.Logger) func(w http.ResponseWriter, req *http.Request) {
+// numbersHandler launch numbers.NumMerger.Merge with obtained URLS
+func numbersHandler(nm numbers.Merger, respTime int, lg *log.Logger) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		// set timeout
 		timeout := time.After(time.Millisecond * time.Duration(respTime))
@@ -25,8 +25,9 @@ func numbersHandler(merg *numbers.Merger, respTime int, lg *log.Logger) func(w h
 		}
 		// log and respond with merged numbers
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
 		lg.Println("Obtained list of next urls:", req.URL.Query()["u"])
-		merg.Merge(req.URL.Query()["u"], w, timeout)
+		nm.Merge(req.URL.Query()["u"], w, timeout)
 	}
 }
 
@@ -63,7 +64,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	// create merger and start workers
-	merger := numbers.NewMerger(*workerCount, *reqTimeout, logger)
+	merger := numbers.NewNumMerger(*workerCount, *reqTimeout, logger)
 	defer merger.Close()
 
 	// launch service

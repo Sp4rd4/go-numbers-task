@@ -13,30 +13,35 @@ type Data struct {
 	Numbers []int `json:"numbers"`
 }
 
+// Merger defines interface for merging
+type Merger interface {
+	Merge([]string, io.Writer, <-chan time.Time)
+}
+
+// NumMerger represents numbers Merger service from obtained from URLs
+// NumMerger should be closed to shutdown workers listening for the jobs after it's no longer needed
+type NumMerger struct {
+	jobs       chan job
+	httpClient *http.Client
+	logger     *log.Logger
+}
+
 // job contains url to process and channel to forward results
 type job struct {
 	url    string
 	output chan []int
 }
 
-// Merger represents numbers processing service obtained from URLs
-// Merger should be closed to shutdown workers listening for the jobs after it's no longer needed
-type Merger struct {
-	jobs       chan job
-	httpClient *http.Client
-	logger     *log.Logger
-}
-
-// NewMerger creates new Merger and loads workers to process incoming URLs
+// NewNumMerger creates new NumMerger and loads workers to process incoming URLs
 // Workers are meant to be reused for different merge tasks
 // workerCount defines number of workers to start
 // reqTimeout defines timeout for http requests
 // logger used for logging errors
-func NewMerger(workerCount int, reqTimeout int, logger *log.Logger) *Merger {
+func NewNumMerger(workerCount int, reqTimeout int, logger *log.Logger) *NumMerger {
 	// merger config creation
 	jobs := make(chan job)
 	httpClient := &http.Client{Timeout: time.Millisecond * time.Duration(reqTimeout)}
-	merger := Merger{jobs, httpClient, logger}
+	merger := NumMerger{jobs, httpClient, logger}
 	// workers load
 	for i := 0; i < workerCount; i++ {
 		go merger.numbersWorker()
@@ -49,7 +54,7 @@ func NewMerger(workerCount int, reqTimeout int, logger *log.Logger) *Merger {
 // urls contains URLs to process
 // output defines writer to consume json encoded slice of sorted numbers
 // timeout signals to return sorted numbers slice immediately without waiting for number from non-processed URLs
-func (merger *Merger) Merge(urls []string, output io.Writer, timeout <-chan time.Time) {
+func (merger *NumMerger) Merge(urls []string, output io.Writer, timeout <-chan time.Time) {
 	// create timeout if none was given
 	if timeout == nil {
 		timeout = time.After(time.Second * 5)
@@ -91,25 +96,25 @@ func (merger *Merger) Merge(urls []string, output io.Writer, timeout <-chan time
 }
 
 // Close shutdowns all workers started for this mergers
-func (merger *Merger) Close() {
+func (merger *NumMerger) Close() {
 	close(merger.jobs)
 }
 
 // numbersWorker is worker processing job URL and returns resulting numbers through job output channel
 // errors are logged into merger logger and nil is sent to output channel
-func (merger *Merger) numbersWorker() {
+func (merger *NumMerger) numbersWorker() {
 	for job := range merger.jobs {
 		// merger.httpClient is http.Client with request timeout set in merger initializer
 		resp, err := merger.httpClient.Get(job.url)
 		// check if there's any Get request errors
 		if err != nil {
-			merger.logger.Println(job.url, "htt.Get error:", err)
+			merger.logger.Println(job.url, "http.Get error:", err)
 			job.output <- nil
 			continue
 		}
 		// check if response status is not Success
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			merger.logger.Println(job.url, "Wrong response status")
+			merger.logger.Println(job.url, "Wrong response status:", resp.StatusCode)
 			job.output <- nil
 			continue
 		}
