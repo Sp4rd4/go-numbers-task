@@ -18,15 +18,17 @@ type job struct {
 }
 
 type NumbersMerger struct {
-	jobs chan job
+	jobs       chan job
+	httpClient *http.Client
+	logger     *log.Logger
 }
 
-func NewNumbersMerger(workerCount int, reqTimeout int) *NumbersMerger {
+func StartNewNumbersMerger(workerCount int, reqTimeout int, logger *log.Logger) *NumbersMerger {
 	jobs := make(chan job)
-	merger := NumbersMerger{jobs}
 	httpClient := &http.Client{Timeout: time.Millisecond * time.Duration(reqTimeout)}
+	merger := NumbersMerger{jobs, httpClient, logger}
 	for i := 0; i < workerCount; i++ {
-		go getNumbers(httpClient, jobs)
+		go merger.numbersWorker()
 	}
 	return &merger
 }
@@ -64,18 +66,23 @@ func (merger *NumbersMerger) Merge(urls []string, output io.Writer, timeout <-ch
 	}
 }
 
-func getNumbers(httpClient *http.Client, jobs <-chan job) {
-	for job := range jobs {
-		resp, err := httpClient.Get(job.url)
-		if err != nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			log.Println(job.url, err)
+func (merger *NumbersMerger) numbersWorker() {
+	for job := range merger.jobs {
+		resp, err := merger.httpClient.Get(job.url)
+		if err != nil {
+			merger.logger.Println(job.url, "htt.Get error:", err)
+			job.output <- nil
+			continue
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			merger.logger.Println(job.url, "Wrong response status")
 			job.output <- nil
 			continue
 		}
 		data := Data{}
 		err = json.NewDecoder(resp.Body).Decode(&data)
 		if err != nil {
-			log.Println(job.url, err)
+			merger.logger.Println(job.url, "JSON decode error:", err)
 			job.output <- nil
 			continue
 		}
