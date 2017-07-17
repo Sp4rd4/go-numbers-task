@@ -83,6 +83,7 @@ func (merger *NumMerger) Merge(urls []string, output io.Writer, timeout <-chan t
 					store[number] = struct{}{}
 				}
 			}
+			// return after all jobs done for this Merge
 			if counter < 1 {
 				json.NewEncoder(output).Encode(Data{storeToKeySortedSlice(store)})
 				return

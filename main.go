@@ -12,9 +12,9 @@ import (
 	"github.com/sp4rd4/go-numbers-task/numbers"
 )
 
-// numbersHandler creates handler that processes incoming requests to get URLs with numbers endpoints
-// numbersHandler launch numbers.NumMerger.Merge with obtained URLS
-func numbersHandler(nm numbers.Merger, respTime int, lg *log.Logger) func(w http.ResponseWriter, req *http.Request) {
+// numbersHandler creates handler that launches numbers.NumMerger.Merge
+// created handler also sets appropriate timeout timers, gets numbers service URLs from request URL
+func numbersHandler(merger numbers.Merger, respTime int, lg *log.Logger) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		// set timeout
 		timeout := time.After(time.Millisecond * time.Duration(respTime))
@@ -27,13 +27,13 @@ func numbersHandler(nm numbers.Merger, respTime int, lg *log.Logger) func(w http
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		lg.Println("Obtained list of next urls:", req.URL.Query()["u"])
-		nm.Merge(req.URL.Query()["u"], w, timeout)
+		merger.Merge(req.URL.Query()["u"], w, timeout)
 	}
 }
 
 func main() {
 	// cli flags parsing, following values define config for service
-	port := flag.Int("port", 8000, "`port` for service to accept requests")
+	port := flag.Int("port", 8000, "`port` for service to accept requests, value between 1 and 65535")
 	workerCount := flag.Int("workers", 32, "`number` of workers to precess numbers, should be more than 0")
 	respTimeout := flag.Int("resp-timeout", 500, "max amount of `time in milliseconds` for service to provide answer, should be 50 or more")
 	reqTimeout := flag.Int("req-timeout", 450, "max amount of `time in milliseconds` to wait for answer from external service, should be 10 or more")

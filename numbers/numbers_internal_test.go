@@ -25,6 +25,10 @@ var storeToSliceExamples = []struct {
 		input:    nil,
 		expected: []int{},
 	},
+	{
+		input:    map[int]struct{}{},
+		expected: []int{},
+	},
 }
 
 func compareSlices(a, b []int) bool {
