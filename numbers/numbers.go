@@ -60,7 +60,7 @@ func (merger *NumMerger) Merge(urls []string, output io.Writer, timeout <-chan t
 		timeout = time.After(time.Second * 5)
 	}
 	// channel to receive output from workers
-	workersOutput := make(chan []int)
+	workersOutput := make(chan []int, len(urls))
 	// store is map used as set-like structure thus map value is struct{} and keys are numbers we get from workers
 	store := make(map[int]struct{})
 	// counters store number of jobs to process
