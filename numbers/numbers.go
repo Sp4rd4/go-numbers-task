@@ -61,6 +61,7 @@ func (merger *NumMerger) Merge(urls []string, output io.Writer, timeout <-chan t
 	}
 	// channel to receive output from workers
 	workersOutput := make(chan []int, len(urls))
+	cancelJobGeneration := make(chan struct{})
 	// store is map used as set-like structure thus map value is struct{} and keys are numbers we get from workers
 	store := make(map[int]struct{})
 	// counters store number of jobs to process
@@ -68,7 +69,13 @@ func (merger *NumMerger) Merge(urls []string, output io.Writer, timeout <-chan t
 	// generate jobs in goroutine
 	go func() {
 		for _, url := range urls {
-			merger.jobs <- job{url, workersOutput}
+			// check if Merge timeouted
+			select {
+			case <-cancelJobGeneration:
+				return
+			default:
+				merger.jobs <- job{url, workersOutput}
+			}
 		}
 	}()
 	// listen for workers output immediately after jobs generation started
@@ -91,6 +98,7 @@ func (merger *NumMerger) Merge(urls []string, output io.Writer, timeout <-chan t
 		// return after timeout signal
 		case <-timeout:
 			json.NewEncoder(output).Encode(Data{storeToKeySortedSlice(store)})
+			close(cancelJobGeneration)
 			return
 		}
 	}
