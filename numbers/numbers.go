@@ -30,6 +30,7 @@ type NumMerger struct {
 type job struct {
 	url    string
 	output chan []int
+	cancel chan struct{}
 }
 
 // NewNumMerger creates new NumMerger and loads workers to process incoming URLs
@@ -61,7 +62,7 @@ func (merger *NumMerger) Merge(urls []string, output io.Writer, timeout <-chan t
 	}
 	// channel to receive output from workers
 	workersOutput := make(chan []int, len(urls))
-	cancelJobGeneration := make(chan struct{})
+	cancelJobs := make(chan struct{})
 	// store is map used as set-like structure thus map value is struct{} and keys are numbers we get from workers
 	store := make(map[int]struct{})
 	// counters store number of jobs to process
@@ -71,10 +72,10 @@ func (merger *NumMerger) Merge(urls []string, output io.Writer, timeout <-chan t
 		for _, url := range urls {
 			// check if Merge timeouted
 			select {
-			case <-cancelJobGeneration:
+			case <-cancelJobs:
 				return
 			default:
-				merger.jobs <- job{url, workersOutput}
+				merger.jobs <- job{url, workersOutput, cancelJobs}
 			}
 		}
 	}()
@@ -98,7 +99,7 @@ func (merger *NumMerger) Merge(urls []string, output io.Writer, timeout <-chan t
 		// return after timeout signal
 		case <-timeout:
 			json.NewEncoder(output).Encode(Data{storeToKeySortedSlice(store)})
-			close(cancelJobGeneration)
+			close(cancelJobs)
 			return
 		}
 	}
@@ -113,6 +114,12 @@ func (merger *NumMerger) Close() {
 // errors are logged into merger logger and nil is sent to output channel
 func (merger *NumMerger) numbersWorker() {
 	for job := range merger.jobs {
+		// check for merge cancellation
+		select {
+		case <-job.cancel:
+			continue
+		default:
+		}
 		// merger.httpClient is http.Client with request timeout set in merger initializer
 		resp, err := merger.httpClient.Get(job.url)
 		// check if there's any Get request errors
@@ -134,6 +141,12 @@ func (merger *NumMerger) numbersWorker() {
 			merger.logger.Println(job.url, "JSON decode error:", err)
 			job.output <- nil
 			continue
+		}
+		// check second time for merge cancellation because during request and encoding job may be cancelled
+		select {
+		case <-job.cancel:
+			continue
+		default:
 		}
 		job.output <- data.Numbers
 	}
